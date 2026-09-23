@@ -58,3 +58,50 @@ uv sync
 |  Windows (PowerShell) | `.venv\Scripts\Activate.ps1` |
 |  Windows (cmd) | `.venv\Scripts\activate.bat` |
 |  Linux / macOS | `source .venv/bin/activate` |
+
+---
+
+## 4) تشغيل Kafka (نفس الأمر على أي نظام)
+
+```bash
+docker-compose up -d
+```
+ده بيشغّل Kafka بس على `localhost:9092`. (SQL Server منفصل — راجع الخطوة الجاية).
+
+### إنشاء الـ topic يدويًا (مرة واحدة)
+```bash
+docker exec -it kafka /opt/kafka/bin/kafka-topics.sh \
+  --create --topic flood-risk-raw \
+  --bootstrap-server localhost:9092 \
+  --partitions 3 --replication-factor 1
+```
+
+---
+
+## 5) إعداد SQL Server المحلي بتاعك
+
+كل فرد يستخدم نسخة SQL Server الخاصة بيه (مثبتة على الجهاز أو عبر Docker منفصل). لازم تعمل:
+
+```sql
+CREATE DATABASE FloodProjectDB;
+```
+
+---
+
+## 6) ملف `.env`
+
+```bash
+cp .env.example .env
+```
+
+افتح `.env` واملأ بياناتك الشخصية (بورت SQL Server، اليوزر/الباسورد أو Windows Authentication، ومفتاح Groq API). التفاصيل الكاملة موجودة داخل `.env.example` نفسه كتعليقات.
+
+⚠️ **`.env` لا يُرفع على Git أبدًا** (موجود في `.gitignore`).
+
+تأكد إن الاتصال بقاعدة البيانات شغال:
+```bash
+uv run python warehouse/db_connection.py
+```
+المفروض يطلعلك: `✅ Connected to SQL Server successfully.`
+
+---
