@@ -1,6 +1,6 @@
 """
 dag_historical_bootstrap.py
-Owner: Mohamed Tarek (orchestrates his own ingestion scripts + Mina's setup_db.py)
+Owner: Mohamed Tarek (orchestrates his own ingestion scripts + Menna's setup_db.py)
 
 ONE-TIME DAG — not scheduled (schedule=None). Trigger it manually once,
 right after Airflow itself is up, to set up the whole project from zero:
@@ -19,9 +19,7 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 
-# Resolves to the project root automatically, regardless of whose
-# machine this runs on: orchestration/dags/<this file> -> project root
-# is two directories up.
+
 PROJECT_DIR = os.environ.get("PROJECT_DIR", "/opt/airflow/project")
 
 default_args = {
@@ -33,7 +31,7 @@ default_args = {
 with DAG(
     dag_id="historical_bootstrap",
     description="One-time: create DB/tables, then populate gold.dim_location and bronze.historical_weather",
-    schedule=None,          # manual trigger only — this must never run twice carelessly
+    schedule=None,         
     start_date=datetime(2026, 1, 1),
     catchup=False,
     default_args=default_args,
@@ -58,8 +56,5 @@ with DAG(
         retry_delay=timedelta(minutes=10),
     )
 
-    # Tables must exist before anything tries to write to them.
-    # Static data runs before historical since it is the simpler, faster
-    # call — if it fails, we find out before spending minutes pulling
-    # 5 years of historical data.
+
     setup_database >> fetch_static_data >> fetch_historical
