@@ -32,9 +32,7 @@
 نزّل **SQL Server Developer** (مجاني) و**SSMS** من موقع Microsoft، وثبّتهم.
 بعد التثبيت لازم تظبّط 3 حاجات (هنعملها في الجزء 2، الخطوة 2).
 
-### تثبيت uv (اختياري)
-مش لازم عشان تشغّل Airflow (uv بيتثبّت لوحده جوه Docker).
-محتاجه بس لو هتكتب كود وتجرّبه على جهازك:
+### تثبيت uv
 ```powershell
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
@@ -90,21 +88,24 @@ copy .env.example .env
 SQLSERVER_PASSWORD=الباسورد_بتاع_sa
 GROQ_API_KEY=مفتاحك_من_Groq
 ```
->ال GROQ_API_KEY سيبه فاضي زي مهو انا هديهولك في نهايه المشروع او هخليك تجيب واحد بس في الاخر
+>ال **GROQ_API_KEY** سيبه فاضي زي مهو انا هديهولك في نهايه المشروع او هخليك تجيب واحد بس في الاخر
+
 >اتاكد ان ال **SQLSERVER_PASSWORD** اللي انت هتكتبه هو فعلا الباسورد الصحيح اللي انت عملته و انت بتسطب sql server اول مره علشان ميحصلشي معاك اي مشكله دب لو نسيته خش ل claude قله:
 
 ```
 انا نسيت ال password بتاع ال sa user , عايز اغيره من sql server باستخدام ال queries
 ```
 هيديك 2 queries نفذهم و حط فيهم الباسورد اللي انت عايزه و ده نفسه اللي هتستخدمه في ل .env
-⚠️ ملف `.env` ده بتاعك لوحدك. **عمره ما يتبعت ولا يتعمله commit.**
+>⚠️ ملف `.env` ده بتاعك لوحدك. **عمره ما يتبعت ولا يتعمله commit.**
+
 > ⚠️ متكتبش `"` ولا `$` في الباسورد.
 
 ## الخطوة 4: شغّل الـContainers
 اتأكد إن Docker Desktop شغال يعني [ُEngine Running]
 زي ما انت شايف تحت علي الشمال خالص
 
-![[Pasted image 20261004103450.png]]
+<img width="1596" height="923" alt="image" src="https://github.com/user-attachments/assets/eea272e0-0e00-44e2-a010-ee23cab7ab37" />
+
 
  وبعدين:
 ```powershell
@@ -151,8 +152,10 @@ docker exec airflow cat /opt/airflow/standalone_admin_password.txt
 
 ## الخطوة 7: شغّل تحميل البيانات (مرة واحدة)
 1. في الصفحة الرئيسية، دوس على ▶ جنب **`historical_bootstrap`** ← **Trigger DAG**.
-2. . و بعدين تعال علي 3 نقط اللي علي اليمين و اختار graphs و استنى لحد ما التاسكات التلاتة يبقوا **أخضر** (بياخد 3-4 دقايق):
+   
+2. و بعدين تعال علي 3 نقط اللي علي اليمين و اختار graphs و استنى لحد ما التاسكات التلاتة يبقوا **أخضر** (بياخد 3-4 دقايق):
    `setup_db` ← `fetch_static_data` ← `fetch_historical`
+   
 3. لو تاسك بقى **أحمر**: دوس عليه ← **Logs** ← وابعت الخطأ للتيم او ل claude. لو الخطأ `429 Too Many Requests` استنى دقيقة ودوس **Clear** على التاسك.
 
 ## الخطوة 8: اتأكد إن البيانات وصلت
@@ -162,7 +165,8 @@ SELECT COUNT(*) FROM FloodProjectDB.gold.dim_location;           -- 15
 SELECT city, COUNT(*) FROM FloodProjectDB.bronze.historical_weather GROUP BY city;  -- 15 مدينة
 ```
 
-![[Screenshot 2026-10-04 095911.png]]
+<img width="1476" height="825" alt="Screenshot 2026-10-04 095911" src="https://github.com/user-attachments/assets/8c0e4e30-38ce-4ac8-880a-a13a26064d34" />
+
 ## الخطوة 9: الـ Hourly
 الـDAG اسمه **`hourly_ingestion`** وبيشتغل **لوحده كل ساعة**، مش محتاج تعمل حاجة.
 للتجربة فوراً: دوس ▶ ← **Trigger DAG**، وبعدها بردك اتاكد في sql server:
@@ -172,7 +176,8 @@ SELECT city, COUNT(*) FROM FloodProjectDB.bronze.historical_weather GROUP BY cit
 SELECT TOP 20 * FROM FloodProjectDB.bronze.live_weather ORDER BY ingested_at DESC;
 ```
 
-![[Screenshot 2026-10-04 095414.png]]
+<img width="1396" height="827" alt="Screenshot 2026-10-04 095414" src="https://github.com/user-attachments/assets/c45c13cb-1196-4186-bde4-5743ef9b942c" />
+
 
 ✅كده المشروع شغال. الجزء الجاي هو اللي هتستخدمه كل يوم.
 
