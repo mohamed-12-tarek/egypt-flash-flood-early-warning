@@ -35,7 +35,7 @@ with DAG(
     schedule="@hourly",
     start_date=datetime(2026, 1, 1),
     catchup=False,
-    is_paused_upon_creation=False,   # يشتغل لوحده من غير ما تفعّله
+    is_paused_upon_creation=False,  
     default_args=default_args,
     tags=["flood-warning", "ingestion", "hourly"],
 ) as dag:
