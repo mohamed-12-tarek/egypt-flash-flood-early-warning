@@ -61,7 +61,6 @@ if __name__ == "__main__":
             columns = ["city", "event_time"] + HOURLY_VARIABLES + ["source"]
             city_df = city_df[columns]
 
-            # Idempotent: delete this city's old rows first, so retries never duplicate
             with engine.begin() as conn:
                 conn.execute(
                     text("DELETE FROM bronze.historical_weather WHERE city = :c"),
@@ -81,5 +80,5 @@ if __name__ == "__main__":
 
     if failed_cities:
         logger.warning(f"Finished with errors. Failed cities: {failed_cities}")
-        sys.exit(1)  # make the Airflow task FAIL instead of showing green
+        sys.exit(1)  
     logger.info(f"fetch_historical.py finished. {total_rows} total rows written.")
