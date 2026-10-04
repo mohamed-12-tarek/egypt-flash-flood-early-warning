@@ -76,7 +76,7 @@ def main():
     for city, (lat, lon) in AT_RISK_LOCATIONS.items():
         try:
             message = fetch_latest_reading(city, lat, lon)
-            producer.send(KAFKA_TOPIC, message).get(timeout=30)  # يظهر خطأ الإرسال فوراً
+            producer.send(KAFKA_TOPIC, message).get(timeout=30)  
             sent_count += 1
             logger.info(f"Sent reading for {city}: {message}")
         except Exception:
@@ -88,7 +88,7 @@ def main():
 
     if failed_cities:
         logger.warning(f"Finished with errors. Failed cities: {failed_cities}")
-        sys.exit(1)  # التاسك يفشل في Airflow بدل ما يطلع أخضر
+        sys.exit(1)  
     logger.info(f"producer_live.py finished. {sent_count} readings published.")
 
 if __name__ == "__main__":
