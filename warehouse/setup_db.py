@@ -46,9 +46,6 @@ def run_sql_file(conn, filename: str):
 
 if __name__ == "__main__":
     logger.info("setup_db.py started")
-
-    # Connect to "master" — FloodProjectDB might not exist yet on a fresh
-    # machine, and CREATE DATABASE must run outside an explicit transaction.
     conn = get_raw_connection(database="master", autocommit=True)
 
     try:
