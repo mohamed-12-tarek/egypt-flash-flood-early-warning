@@ -1,0 +1,6 @@
+
+IF DB_ID(N'FloodProjectDB') IS NULL
+BEGIN
+    CREATE DATABASE FloodProjectDB;
+END
+GO
