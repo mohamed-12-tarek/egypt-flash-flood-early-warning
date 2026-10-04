@@ -1,24 +1,10 @@
-"""
-db_connection.py
-Shared SQL Server connection utility — used by everyone on the team
-(Ingestion, Spark, ML, Analysis, GenAI).
-
-Each team member has their own local SQL Server (Docker or installed
-directly) and their own .env file with their own credentials/port.
-This file reads those values so nobody hardcodes a connection string.
-
-Usage:
-    from db_connection import get_engine
-    engine = get_engine()
-    df.to_sql("table_name", con=engine, schema="silver", if_exists="append", index=False)
-"""
-
 import os
 from urllib.parse import quote_plus
+import pyodbc
 from sqlalchemy import create_engine
 from dotenv import load_dotenv
 
-load_dotenv()  
+load_dotenv()
 
 
 def get_engine():
@@ -45,6 +31,28 @@ def get_engine():
         )
 
     return create_engine(connection_url)
+
+
+def get_raw_connection(database: str = "master", autocommit: bool = True):
+    host = os.environ["SQLSERVER_HOST"]
+    port = os.environ.get("SQLSERVER_PORT", "1433")
+    driver = os.environ.get("SQLSERVER_DRIVER", "ODBC Driver 18 for SQL Server")
+    trusted = os.environ.get("SQLSERVER_TRUSTED_CONNECTION", "no").lower() == "yes"
+
+    if trusted:
+        conn_str = (
+            f"DRIVER={{{driver}}};SERVER={host},{port};DATABASE={database};"
+            f"Trusted_Connection=yes;TrustServerCertificate=yes;"
+        )
+    else:
+        user = os.environ["SQLSERVER_USER"]
+        password = os.environ["SQLSERVER_PASSWORD"]
+        conn_str = (
+            f"DRIVER={{{driver}}};SERVER={host},{port};DATABASE={database};"
+            f"UID={user};PWD={password};TrustServerCertificate=yes;"
+        )
+
+    return pyodbc.connect(conn_str, autocommit=autocommit)
 
 
 if __name__ == "__main__":
