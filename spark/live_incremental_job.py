@@ -26,6 +26,72 @@ from spark.shared_feature_logic import (  # noqa: E402
 
 logger = logging.getLogger("live_incremental_job")
 
+
+#import columns from silver (context_columns) will need them to calc rainfall and time features
+TIME_CONTEXT_COLUMNS = [
+    "city",
+    "event_time",
+    "source",
+    "precipitation",
+    "relative_humidity_2m",
+    "temperature_2m",
+    "surface_pressure",
+    "windspeed_10m",
+    "cloudcover",
+    "soil_moisture_0_to_7cm",
+    "elevation",
+    "slope_degree",
+]
+
+
+def _build_time_context(spark, new_rows):
+    """Add the previous 71 hours from Silver for each new live row"""
+    new_keys = (
+        new_rows.select(
+            "city",
+            F.to_timestamp("event_time").alias("event_time"),
+        )
+        .dropDuplicates(["city", "event_time"])
+    )
+
+    silver_context = (
+        read_sql_table(spark, "silver.fact_weather_features")
+        .select(*TIME_CONTEXT_COLUMNS)
+        .withColumn("event_time", F.to_timestamp("event_time"))
+    )
+
+    context = silver_context.alias("context")
+    keys = new_keys.alias("keys")
+
+    context_time = F.col("context.event_time").cast("long")
+    new_time = F.col("keys.event_time").cast("long")
+
+    recent_silver_rows = (
+        context.join(
+            keys,
+            on=(
+                (F.col("context.city") == F.col("keys.city"))
+                & (context_time >= new_time - F.lit(71 * 60 * 60))
+                & (context_time <= new_time)
+            ),
+            how="inner",
+        )
+        .select(
+            *[
+                F.col(f"context.{column}").alias(column)
+                for column in TIME_CONTEXT_COLUMNS
+            ]
+        )
+    )
+
+    new_rows_for_features = new_rows.select(*TIME_CONTEXT_COLUMNS)
+
+    return (
+        recent_silver_rows
+        .unionByName(new_rows_for_features)
+        .dropDuplicates(["city", "event_time"])
+    )
+
 def _read_new_live_rows(spark):
     """Read live Bronze rows whose city and event time are not in Silver yet."""
     live_rows = (
@@ -71,8 +137,22 @@ def run() -> None:
         enriched_weather = enrich_with_location(clean_weather, locations)
         assert_all_locations_mapped(enriched_weather)
 
-        silver_features = add_time_features(enriched_weather).select(
-            *SILVER_FEATURE_COLUMNS
+        time_context = _build_time_context(spark, enriched_weather)
+
+        calculated_features = add_time_features(time_context)
+
+        new_keys = (
+            enriched_weather.select("city", "event_time")
+            .dropDuplicates(["city", "event_time"])
+        )
+
+        silver_features = (
+            calculated_features.join(
+                new_keys,
+                on=["city", "event_time"],
+                how="left_semi",
+            )
+            .select(*SILVER_FEATURE_COLUMNS)
         )
 
         logger.info("Appending new live features to Silver")
