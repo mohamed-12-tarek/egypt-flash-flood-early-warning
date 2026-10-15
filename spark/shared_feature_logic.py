@@ -214,7 +214,6 @@ def add_time_features(enriched_df: DataFrame) -> DataFrame:
     )
 
     def trailing_window(hours: int):
-        # N hourly readings span N-1 hours from the oldest reading to now.
         return (
             Window.partitionBy("city")
             .orderBy(F.col("_event_epoch_seconds"))
