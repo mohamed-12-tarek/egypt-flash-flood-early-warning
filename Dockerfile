@@ -1,6 +1,10 @@
 FROM apache/airflow:2.10.2-python3.11
 
 USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    unixodbc-dev \
+    openjdk-17-jre-headless \
+    && rm -rf /var/lib/apt/lists/*
 RUN apt-get update && apt-get install -y curl gnupg unixodbc-dev \
  && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg \
  && curl -fsSL https://packages.microsoft.com/config/debian/12/prod.list > /etc/apt/sources.list.d/mssql-release.list \
