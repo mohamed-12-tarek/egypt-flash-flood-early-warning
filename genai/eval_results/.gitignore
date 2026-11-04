@@ -1,0 +1,5 @@
+# Every eval run is saved here automatically. Keep only the baseline(s) and this README in git.
+# To keep one run as evidence (e.g. for the competition): git add -f eval_results/<file>.json
+eval_*.json
+latest.json
+!baseline_*.json
