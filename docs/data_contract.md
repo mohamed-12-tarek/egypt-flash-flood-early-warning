@@ -52,13 +52,16 @@ Hurghada, Safaga, Quseir, Marsa_Alam, Ain_Sokhna, Suez, Aswan, Luxor, Sohag
 
 ---
 
-## 3) Bronze Layer (ملفات، مش SQL)
+## 3) Bronze Layer — SQL Server
 
-```
-bronze/historical/weather_raw.parquet
-bronze/live/{year}/{month}/{day}/{hour}/weather_raw.json
-```
-**الأعمدة:** نفس حقول رسالة Kafka بالظبط (القسم 2).
+جدولين بنفس أعمدة رسالة Kafka (القسم 2) + `id` و`ingested_at`. `event_time` بيتخزن **نص** زي ما وصل من المصدر (`yyyy-MM-ddTHH:mm`) وبيتحول لـ timestamp في Spark.
+
+| الجدول | بيتكتب بواسطة | `source` |
+|---|---|---|
+| `bronze.historical_weather` | `ingestion/fetch_historical.py` (آخر 5 سنين لحد الساعة الحالية UTC) | `historical` |
+| `bronze.live_weather` | `ingestion/kafka_to_bronze_consumer.py` | `live` |
+
+الأعمدة: `id` (BIGINT identity), `city`, `event_time` (NVARCHAR(50)), `precipitation`, `relative_humidity_2m`, `temperature_2m`, `surface_pressure`, `windspeed_10m`, `cloudcover`, `soil_moisture_0_to_7cm` (كلها FLOAT NULL), `ingested_at` (DATETIME2), `source`.
 
 ---
 
@@ -84,12 +87,14 @@ CREATE TABLE silver.fact_weather_features (
     elevation               FLOAT           NOT NULL,
     slope_degree            FLOAT           NOT NULL,
 
-    rain_lag_1h             FLOAT           NULL,
-    rain_lag_3h             FLOAT           NULL,
-    rain_lag_24h            FLOAT           NULL,
+    rain_sum_1h             FLOAT           NULL,
+    rain_sum_3h             FLOAT           NULL,
     rain_sum_6h             FLOAT           NULL,
     rain_sum_24h            FLOAT           NULL,
     rain_sum_72h            FLOAT           NULL,
+    rain_lag_1h             FLOAT           NULL,
+    rain_lag_24h            FLOAT           NULL,
+
     hour_of_day             INT             NOT NULL,
     month                   INT             NOT NULL,
 
@@ -102,6 +107,11 @@ CREATE INDEX IX_silver_city_time ON silver.fact_weather_features (city, event_ti
 ```
 
 **مالك الجدول:** منه وخيري (Schema) — يوسف (كتابة/قراءة عبر Spark).
+
+**ملاحظات:**
+- `rain_sum_Nh` = مجموع المطر في آخر N ساعة **شاملة الساعة الحالية** (window على الثواني، فالساعات الناقصة ما بتدخلش قراءات أقدم).
+- `soil_moisture_0_to_7cm` بيتقص لـ ≥ 0 عند التنظيف (ERA5 بيطلع أحيانًا قيم سالبة صغيرة).
+- الصفوف `historical` بتتستبدل بالكامل عند تشغيل `historical_bootstrap`، والصفوف `live` بتتضاف فقط.
 
 ---
 
@@ -132,7 +142,7 @@ CREATE TABLE gold.fact_hourly_risk (
     rain_sum_24h        FLOAT           NOT NULL,
     rain_sum_72h        FLOAT           NOT NULL,
     risk_score          INT             NOT NULL,   -- 0–100
-    risk_level          NVARCHAR(20)    NOT NULL,   -- آمن / مراقبة / خطر / خطر شديد
+    risk_level          NVARCHAR(20)    NOT NULL,   -- Safe / Watch / Danger / Severe Danger
     loaded_at           DATETIME2       NOT NULL DEFAULT GETUTCDATE(),
 
     CONSTRAINT UQ_gold_city_time UNIQUE (city, event_time)
@@ -164,12 +174,16 @@ CREATE TABLE gold.predictions (
 
 ## 6) قيم `risk_level` المعتمدة (نفس النص بالحرف الواحد في كل الكود)
 
-| النطاق | القيمة |
+| الشرط | القيمة |
 |---|---|
-| 0–29 | `"آمن"` |
-| 30–59 | `"مراقبة"` |
-| 60–79 | `"خطر"` |
-| 80–100 | `"خطر شديد"` |
+| `rain_sum_24h < 1` مم (مفيش مطر تقريبًا) | `"Safe"` |
+| `risk_score < P80` | `"Safe"` |
+| `P80 ≤ risk_score < P95` | `"Watch"` |
+| `P95 ≤ risk_score < P99` | `"Danger"` |
+| `risk_score ≥ P99` | `"Severe Danger"` |
+
+الـ P80/P95/P99 بتتحسب من صفوف الـ historical اللي فيها `rain_sum_24h ≥ 1` مم بس
+(`RAIN_GATE_MM` في `spark/silver_to_gold_load.py`)، عشان الساعات الجافة ما تسحبش العتبات لأرقام صغيرة.
 
 ---
 
@@ -180,7 +194,9 @@ CREATE TABLE gold.predictions (
 | `GET /analysis/current-status` | عمرو | آخر `risk_score`/`risk_level` لكل مدينة |
 | `GET /analysis/history/{city}` | عمرو | آخر 24 ساعة لمدينة معينة |
 | `GET /analysis/kpis` | عمرو | بطاقات الملخص (عدد المناطق في خطر، أعلى قيمة...) |
-| `POST /chatbot/ask` | محمد طارق | body: `{"question": "..."}` → يرجع `{"answer": "..."}` |
+| `POST /chatbot/ask` | محمد طارق | body: `{"question": "...", "history": [اختياري]}` → يرجع `{"answer": "...", "language", "tools_used", "data_as_of", "stale", "sources", "grounded", "status"}` (راجع `docs/genai_agent.md`) |
+| `GET /chatbot/alert/{city}?lang=ar\|en` | محمد طارق | تنبيه نصي جاهز للعرض (كتبه الـ LLM من البيانات وتم التحقق منه) + `risk_level` و`peak` و`main_factors` و`data_as_of` |
+| `GET /chatbot/health` | محمد طارق | `{"status": "ok"}` |
 
 ---
 
