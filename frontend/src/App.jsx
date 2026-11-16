@@ -55,6 +55,28 @@ const labels = {
   },
 };
 
+// Canonical list of the 15 monitored regions. `id` is the exact value sent to
+// the API. The dropdown and the status grid are built from THIS list, never from
+// API responses, so a region stays selectable even when it has no current data.
+// `aliases` only help match API records whose name is spelled differently.
+const REGIONS = [
+  { id: "St_Catherine", ar: "سانت كاترين", en: "St. Catherine", aliases: ["Saint Catherine", "Saint_Catherine"] },
+  { id: "Dahab", ar: "دهب", en: "Dahab" },
+  { id: "Nuweiba", ar: "نويبع", en: "Nuweiba" },
+  { id: "Taba", ar: "طابا", en: "Taba" },
+  { id: "Sharm_El_Sheikh", ar: "شرم الشيخ", en: "Sharm El-Sheikh", aliases: ["Sharm El Sheikh", "Sharm Elsheikh"] },
+  { id: "Ras_Gharib", ar: "رأس غارب", en: "Ras Gharib" },
+  { id: "Hurghada", ar: "الغردقة", en: "Hurghada" },
+  { id: "Safaga", ar: "سفاجا", en: "Safaga" },
+  { id: "Quseir", ar: "القصير", en: "Quseir", aliases: ["El Quseir", "Al Quseir"] },
+  { id: "Marsa_Alam", ar: "مرسى علم", en: "Marsa Alam" },
+  { id: "Ain_Sokhna", ar: "العين السخنة", en: "Ain Sokhna", aliases: ["Ain El Sokhna"] },
+  { id: "Suez", ar: "السويس", en: "Suez" },
+  { id: "Aswan", ar: "أسوان", en: "Aswan" },
+  { id: "Luxor", ar: "الأقصر", en: "Luxor" },
+  { id: "Sohag", ar: "سوهاج", en: "Sohag" },
+];
+
 export default function App() {
   const [language, setLanguage] = useState("ar");
   const [theme, setTheme] = useState("light");
@@ -118,10 +140,11 @@ export default function App() {
               <label className="city-picker">
                 <span>{text.chooseCity}</span>
                 <select value={city} onChange={(event) => setCity(event.target.value)}>
-                  <option value="Hurghada">الغردقة / Hurghada</option>
-                  <option value="Aswan">أسوان / Aswan</option>
-                  <option value="Sohag">سوهاج / Sohag</option>
-                  <option value="Safaga">سفاجا / Safaga</option>
+                  {REGIONS.map((region) => (
+                    <option key={region.id} value={region.id}>
+                      {region[language]}
+                    </option>
+                  ))}
                 </select>
               </label>
             )}
@@ -144,14 +167,15 @@ export default function App() {
           </div>
         </header>
 
-{screen === "dashboard" ? (
-  <main className="dashboard-view">
-    <AlertBanner city={city} lang={language} />
-    <AnalysisPanel lang={language} />
-  </main>
-) : (
-  <ChatbotPanel lang={language} />
-)}      </div>
+        {screen === "dashboard" ? (
+          <main className="dashboard-view">
+            <AlertBanner city={city} lang={language} regions={REGIONS} />
+            <AnalysisPanel city={city} lang={language} regions={REGIONS} />
+          </main>
+        ) : (
+          <ChatbotPanel lang={language} />
+        )}
+      </div>
     </div>
   );
 }

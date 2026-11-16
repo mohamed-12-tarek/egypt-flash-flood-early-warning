@@ -344,9 +344,107 @@
   gap: 20px;
 }
 
+.app {
+  --danger: #c53030;
+  --warn: #946200;
+}
+
+.app.theme-dark {
+  --danger: #fc8181;
+  --warn: #f6c453;
+}
+
+/* ---------- risk pills / alert extras ---------- */
+
+.risk-pill {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.risk-safe {
+  background: #1f8a5b;
+}
+
+.risk-watch {
+  background: #946200;
+}
+
+.risk-danger {
+  background: #c05621;
+}
+
+.risk-severe {
+  background: #c53030;
+}
+
+.alert-card.has-alert {
+  border-color: var(--warn);
+}
+
+.alert-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.alert-facts li {
+  display: grid;
+  gap: 2px;
+}
+
+.alert-facts span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.stale-note {
+  margin: 8px 0 0;
+  color: var(--warn);
+  font-size: 13px;
+}
+
+.disclaimer-note,
+.error-detail {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.error-text {
+  color: var(--danger);
+}
+
+/* ---------- chat ---------- */
+
+.chat-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat-header h2 {
+  margin-bottom: 4px;
+}
+
+.chat-availability {
+  color: var(--primary);
+  font-size: 13px;
+}
+
+/* The list is always LTR: user on the right, assistant on the left, in both
+   languages. Each bubble sets its own text direction via the dir attribute. */
 .chat-messages {
   display: flex;
-  flex: 1;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 12px;
   min-height: 260px;
@@ -360,6 +458,11 @@
   direction: ltr;
 }
 
+.chat-empty {
+  margin: auto;
+  text-align: center;
+}
+
 .message-row {
   display: flex;
   width: 100%;
@@ -373,64 +476,301 @@
   justify-content: flex-start;
 }
 
-.chat-card .message-bubble {
+.message-stack {
+  display: flex;
   max-width: min(78%, 760px);
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.message-row.user .message-stack {
+  align-items: flex-end;
+}
+
+.message-row.assistant .message-stack {
+  align-items: flex-start;
+}
+
+.message-author {
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chat-card .message-bubble {
+  max-width: 100%;
   margin: 0;
   padding: 12px 16px;
   border-radius: 18px;
   font-size: 15px;
   line-height: 1.65;
+  text-align: start;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.message-row.user .message-bubble {
+.chat-card .message-row.user .message-bubble {
   border-bottom-right-radius: 5px;
   color: var(--chat-user-text);
   background: var(--chat-user-bg);
 }
 
-.message-row.assistant .message-bubble {
+.chat-card .message-row.assistant .message-bubble {
   border: 1px solid var(--border);
   border-bottom-left-radius: 5px;
   color: var(--text);
   background: var(--surface);
 }
 
-.message-row {
+.chat-card .message-row.assistant .error-bubble {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.typing-bubble {
   display: flex;
-  width: 100%;
-  margin: 10px 0;
+  align-items: center;
+  gap: 5px;
 }
 
-.message-row.user {
-  justify-content: flex-end;
+.typing-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: typing-bounce 1.2s infinite ease-in-out;
 }
 
-.message-row.assistant {
-  justify-content: flex-start;
+.typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
 }
 
-.chat-card .message-bubble {
-  max-width: min(78%, 760px);
-  margin: 0;
-  padding: 12px 16px;
-  border-radius: 18px;
-  font-size: 15px;
-  line-height: 1.65;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+.typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
 }
 
-.message-row.user .message-bubble {
+@keyframes typing-bounce {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+}
+
+.retry-button {
+  min-height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--primary);
+  border-radius: 999px;
+  color: var(--primary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.retry-button:hover {
   color: #fff;
-  background: #147f79;
-  border-bottom-right-radius: 5px;
+  background: var(--primary);
 }
 
-.message-row.assistant .message-bubble {
-  color: var(--text);
-  background: var(--surface);
+.chat-form button:disabled,
+.chat-form input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* ---------- analysis ---------- */
+
+.analysis-panel {
+  display: grid;
+  gap: 20px;
+}
+
+.analysis-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.analysis-header .eyebrow {
+  margin: 0;
+}
+
+.analysis-note {
+  margin: 0;
+  color: var(--muted);
+}
+
+.analysis-error {
+  color: var(--danger);
+}
+
+.analysis-error p {
+  margin: 0 0 6px;
+}
+
+.kpi-grid,
+.status-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+
+.kpi-card,
+.status-card {
+  padding: 16px;
   border: 1px solid var(--border);
-  border-bottom-left-radius: 5px;
+  border-radius: 16px;
+  background: var(--page-bg);
+}
+
+.kpi-card {
+  display: grid;
+  gap: 8px;
+}
+
+.kpi-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.kpi-value {
+  color: var(--primary);
+  font-size: 28px;
+}
+
+.kpi-value small {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.status-card.no-data {
+  opacity: 0.8;
+  border-style: dashed;
+}
+
+.status-card.selected {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.status-card header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.status-card h3 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.status-card dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.status-card dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.status-card dt {
+  color: var(--muted);
+}
+
+.status-card dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.chart-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.chart-heading h2 {
+  margin: 0;
+}
+
+.metric-switch {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.metric-switch button {
+  padding: 6px 14px;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+}
+
+.metric-switch button.active {
+  color: #fff;
+  background: var(--primary);
+}
+
+.chart-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.line-chart {
+  display: block;
+  width: 100%;
+  min-width: 420px;
+  height: auto;
+}
+
+.chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.chart-label {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-dot {
+  fill: var(--surface);
+  stroke: var(--primary);
+  stroke-width: 2;
+}
+
+@media (max-width: 650px) {
+  .message-stack {
+    max-width: 88%;
+  }
+
+  .analysis-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
