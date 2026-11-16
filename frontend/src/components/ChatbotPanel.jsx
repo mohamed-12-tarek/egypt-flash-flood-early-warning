@@ -43,6 +43,170 @@ function textDirection(value, fallback) {
   return /[؀-ۿ]/.test(firstLetter[0]) ? "rtl" : "ltr";
 }
 
+/* ---------- minimal, safe Markdown renderer for assistant replies ----------
+   Builds React elements only (no innerHTML), so reply text can never inject
+   markup. Supports: **bold**, *italic*, `code`, [text](http/https link),
+   # headings, - / * / • bullet lists, 1. numbered lists, > quotes, ---,
+   and ``` code fences. Anything else (tables, images) shows as plain text. */
+
+const INLINE_PATTERN =
+  /\*\*(.+?)\*\*|`([^`\n]+)`|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|\*([^\s*](?:[^*\n]*[^\s*])?)\*/g;
+const HR_PATTERN = /^\s*([-*_])(\s*\1){2,}\s*$/;
+const BULLET_PATTERN = /^\s*[-*•]\s+(.*)$/;
+const ORDERED_PATTERN = /^\s*\d+[.)]\s+(.*)$/;
+const QUOTE_PATTERN = /^\s*>\s?(.*)$/;
+const HEADING_PATTERN = /^\s*(#{1,6})\s+(.*)$/;
+const FENCE_PATTERN = /^\s*```/;
+
+function renderInline(source, keyPrefix) {
+  const nodes = [];
+  const pattern = new RegExp(INLINE_PATTERN.source, "g");
+  let last = 0;
+  let count = 0;
+  let match = pattern.exec(source);
+
+  while (match !== null) {
+    if (match.index > last) nodes.push(source.slice(last, match.index));
+    const key = `${keyPrefix}-${count++}`;
+
+    if (match[1] !== undefined) {
+      nodes.push(<strong key={key}>{renderInline(match[1], key)}</strong>);
+    } else if (match[2] !== undefined) {
+      nodes.push(<code key={key}>{match[2]}</code>);
+    } else if (match[3] !== undefined) {
+      nodes.push(
+        <a key={key} href={match[4]} target="_blank" rel="noopener noreferrer">
+          {match[3]}
+        </a>
+      );
+    } else {
+      nodes.push(<em key={key}>{renderInline(match[5], key)}</em>);
+    }
+
+    last = pattern.lastIndex;
+    match = pattern.exec(source);
+  }
+
+  if (last < source.length) nodes.push(source.slice(last));
+  return nodes;
+}
+
+function isSpecialLine(line) {
+  return (
+    FENCE_PATTERN.test(line) ||
+    HEADING_PATTERN.test(line) ||
+    HR_PATTERN.test(line) ||
+    BULLET_PATTERN.test(line) ||
+    ORDERED_PATTERN.test(line) ||
+    QUOTE_PATTERN.test(line)
+  );
+}
+
+function renderMarkdown(source) {
+  const lines = String(source ?? "").replace(/\r\n?/g, "\n").split("\n");
+  const blocks = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.trim() === "") {
+      i += 1;
+      continue;
+    }
+
+    const key = `b${blocks.length}`;
+
+    if (FENCE_PATTERN.test(line)) {
+      const code = [];
+      i += 1;
+      while (i < lines.length && !FENCE_PATTERN.test(lines[i])) {
+        code.push(lines[i]);
+        i += 1;
+      }
+      i += 1; // closing fence
+      blocks.push(
+        <pre key={key} dir="ltr">
+          <code>{code.join("\n")}</code>
+        </pre>
+      );
+      continue;
+    }
+
+    const heading = line.match(HEADING_PATTERN);
+    if (heading) {
+      blocks.push(
+        <div
+          key={key}
+          role="heading"
+          aria-level={Math.min(heading[1].length + 2, 6)}
+          className="md-heading"
+        >
+          {renderInline(heading[2].trim(), key)}
+        </div>
+      );
+      i += 1;
+      continue;
+    }
+
+    if (HR_PATTERN.test(line)) {
+      blocks.push(<hr key={key} />);
+      i += 1;
+      continue;
+    }
+
+    const isOrdered = ORDERED_PATTERN.test(line);
+    if (isOrdered || BULLET_PATTERN.test(line)) {
+      const pattern = isOrdered ? ORDERED_PATTERN : BULLET_PATTERN;
+      const items = [];
+      while (i < lines.length && pattern.test(lines[i])) {
+        items.push(lines[i].match(pattern)[1]);
+        i += 1;
+      }
+      const List = isOrdered ? "ol" : "ul";
+      blocks.push(
+        <List key={key}>
+          {items.map((item, index) => (
+            <li key={index}>{renderInline(item, `${key}-${index}`)}</li>
+          ))}
+        </List>
+      );
+      continue;
+    }
+
+    if (QUOTE_PATTERN.test(line)) {
+      const quoted = [];
+      while (i < lines.length && QUOTE_PATTERN.test(lines[i])) {
+        quoted.push(lines[i].match(QUOTE_PATTERN)[1]);
+        i += 1;
+      }
+      blocks.push(<blockquote key={key}>{renderInline(quoted.join(" "), key)}</blockquote>);
+      continue;
+    }
+
+    // Paragraph: consecutive plain lines, kept as line breaks.
+    const paragraph = [];
+    while (
+      i < lines.length &&
+      lines[i].trim() !== "" &&
+      (paragraph.length === 0 || !isSpecialLine(lines[i]))
+    ) {
+      paragraph.push(lines[i]);
+      i += 1;
+    }
+    blocks.push(
+      <p key={key}>
+        {paragraph.flatMap((text, index) =>
+          index === 0
+            ? renderInline(text, `${key}-0`)
+            : [<br key={`${key}-br${index}`} />, ...renderInline(text, `${key}-${index}`)]
+        )}
+      </p>
+    );
+  }
+
+  return blocks;
+}
+
 export default function ChatbotPanel({ lang }) {
   const text = labels[lang] ?? labels.ar;
   const uiDir = lang === "ar" ? "rtl" : "ltr";
@@ -180,12 +344,21 @@ export default function ChatbotPanel({ lang }) {
               <span className="message-author" dir={uiDir}>
                 {item.role === "user" ? text.you : text.assistant}
               </span>
-              <p
-                className="message-bubble"
-                dir={textDirection(item.content, item.language === "ar" ? "rtl" : "ltr")}
-              >
-                {item.content}
-              </p>
+              {item.role === "assistant" ? (
+                <div
+                  className="message-bubble markdown"
+                  dir={textDirection(item.content, item.language === "ar" ? "rtl" : "ltr")}
+                >
+                  {renderMarkdown(item.content)}
+                </div>
+              ) : (
+                <p
+                  className="message-bubble"
+                  dir={textDirection(item.content, item.language === "ar" ? "rtl" : "ltr")}
+                >
+                  {item.content}
+                </p>
+              )}
             </div>
           </div>
         ))}

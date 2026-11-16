@@ -523,6 +523,89 @@
   background: var(--surface);
 }
 
+/* Rendered Markdown inside assistant bubbles */
+.chat-card .message-bubble.markdown {
+  white-space: normal;
+}
+
+.chat-card .markdown > :first-child {
+  margin-top: 0;
+}
+
+.chat-card .markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-card .markdown p {
+  margin: 0 0 10px;
+  color: inherit;
+  line-height: inherit;
+}
+
+.chat-card .markdown strong {
+  font-weight: 700;
+}
+
+.chat-card .markdown ul,
+.chat-card .markdown ol {
+  margin: 0 0 10px;
+  padding-block: 0;
+  padding-inline: 1.4em 0;
+}
+
+.chat-card .markdown li {
+  margin: 2px 0;
+}
+
+.chat-card .markdown .md-heading {
+  margin: 12px 0 6px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.chat-card .markdown blockquote {
+  margin: 0 0 10px;
+  padding-block: 2px;
+  padding-inline: 12px 0;
+  border-inline-start: 3px solid var(--primary);
+  color: var(--muted);
+}
+
+.chat-card .markdown hr {
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.chat-card .markdown code {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: rgba(127, 127, 127, 0.18);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 0.92em;
+}
+
+.chat-card .markdown pre {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-radius: 10px;
+  background: rgba(127, 127, 127, 0.18);
+  text-align: left;
+}
+
+.chat-card .markdown pre code {
+  padding: 0;
+  background: transparent;
+  white-space: pre;
+}
+
+.chat-card .markdown a {
+  color: var(--primary);
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
+
 .chat-card .message-row.assistant .error-bubble {
   border-color: var(--danger);
   color: var(--danger);
