@@ -857,3 +857,13 @@
     flex-direction: column;
   }
 }
+.stale-data-note {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-inline-start: 4px solid #e58a26;
+  border-radius: 10px;
+  color: var(--text);
+  background: var(--alert-bg);
+  line-height: 1.6;
+}

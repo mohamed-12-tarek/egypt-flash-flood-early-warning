@@ -237,7 +237,7 @@ export default function ChatbotPanel({ lang }) {
     const timeoutId = setTimeout(() => controller.abort(), 60000);
 
     try {
-      const response = await fetch(`${API_BASE}/chatbot/ask`, {
+      const response = await fetch("/chatbot/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: message, history }),

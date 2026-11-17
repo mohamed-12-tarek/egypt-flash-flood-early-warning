@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
 
-const API_BASE = "http://127.0.0.1:8001";
-
 // The alert endpoint is always requested with lang=en. The UI language only
 // changes how the structured fields are labelled below; it must never decide
 // whether the data is fetched (the Arabic text generation on the backend is
@@ -160,7 +158,7 @@ function riskKeyOf(level) {
 
 async function requestAlert(city, signal) {
   const response = await fetch(
-    `${API_BASE}/chatbot/alert/${encodeURIComponent(city)}?lang=${REQUEST_LANG}`,
+    `/chatbot/alert/${encodeURIComponent(city)}?lang=${REQUEST_LANG}`,
     { signal }
   );
 

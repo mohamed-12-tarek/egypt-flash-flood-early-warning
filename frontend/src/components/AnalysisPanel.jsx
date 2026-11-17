@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 // Empty by default: requests go to /analysis/... on the Vite origin and the dev
 // proxy (vite.config.js) forwards them to http://127.0.0.1:8000, which avoids
@@ -7,6 +7,43 @@ import { useEffect, useMemo, useRef, useState } from "react";
 const API_BASE = import.meta.env.VITE_ANALYSIS_API_BASE ?? "";
 
 const CACHE_TTL_MS = 60_000;
+const PERSISTENT_CACHE_PREFIX = "flood-analysis:";
+const PERSISTENT_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+function readPersistentCache(path) {
+  if (!path || typeof window === "undefined") return null;
+
+  try {
+    const key = `${PERSISTENT_CACHE_PREFIX}${path}`;
+    const saved = window.localStorage.getItem(key);
+    if (!saved) return null;
+
+    const entry = JSON.parse(saved);
+    const expired =
+      !Number.isFinite(entry?.savedAt) ||
+      Date.now() - entry.savedAt > PERSISTENT_CACHE_MAX_AGE_MS;
+
+    if (expired || !("data" in entry)) {
+      window.localStorage.removeItem(key);
+      return null;
+    }
+
+    return entry;
+  } catch {
+    return null;
+  }
+}
+
+function savePersistentCache(path, data, savedAt) {
+  try {
+    window.localStorage.setItem(
+      `${PERSISTENT_CACHE_PREFIX}${path}`,
+      JSON.stringify({ savedAt, data })
+    );
+  } catch {
+    // لو المتصفح مانع التخزين، الصفحة تفضل تشتغل عادي.
+  }
+}
 const LOCALES = { ar: "ar-u-nu-latn", en: "en" };
 
 const labels = {
@@ -23,7 +60,9 @@ const labels = {
     networkError: "تعذّر الاتصال بخدمة التحليل.",
     risk: "مستوى الخطورة",
     score: "درجة الخطورة",
-    rainfall: "الأمطار",
+    rainfall: "متوسط الأمطار",
+    rain24: "أمطار 24 ساعة",
+    rain72: "أمطار 72 ساعة",
     updated: "آخر تحديث",
     mm: "ملم",
     yes: "نعم",
@@ -37,6 +76,9 @@ const labels = {
     selectedCity: "المدينة المحددة",
     noMetric: "لا توجد قيم رقمية في بيانات السجل.",
     noData: "لا توجد بيانات حالية متاحة.",
+    noHistory: "لا توجد قراءات خلال آخر 24 ساعة لهذه المنطقة.",
+    stale: "البيانات المعروضة محفوظة من زيارة سابقة وقد تكون قديمة. جارٍ تحديثها الآن.",
+    staleFailed: "تعذّر تحديث البيانات؛ المعروض هو آخر بيانات محفوظة وقد تكون قديمة.",
   },
   en: {
     eyebrow: "Analytics",
@@ -51,7 +93,9 @@ const labels = {
     networkError: "Could not reach the analysis service.",
     risk: "Risk level",
     score: "Risk score",
-    rainfall: "Rainfall",
+    rainfall: "Avg rainfall",
+    rain24: "24h rainfall",
+    rain72: "72h rainfall",
     updated: "Last updated",
     mm: "mm",
     yes: "Yes",
@@ -65,6 +109,9 @@ const labels = {
     selectedCity: "Selected city",
     noMetric: "The history data has no numeric values.",
     noData: "No current data available.",
+    noHistory: "No readings in the last 24 hours for this region.",
+    stale: "Showing saved data from a previous visit. It may be outdated; refreshing now.",
+    staleFailed: "Could not refresh the data. Showing the last saved version, which may be outdated.",
   },
 };
 
@@ -83,6 +130,11 @@ const riskNames = {
 // Known KPI keys get an Arabic label; anything else falls back to the label or
 // key returned by the API (humanized), so no KPI is dropped.
 const kpiLabels = {
+  // Keys returned by GET /analysis/kpis (kpi_calculations.py)
+  total_monitored_cities: { ar: "المدن التي لها بيانات", en: "Cities with data" },
+  critical_risk_count: { ar: "مدن في خطر شديد", en: "Severe-danger cities" },
+  warning_risk_count: { ar: "مدن في حالة خطر", en: "Danger cities" },
+  max_rain_24h: { ar: "أعلى أمطار خلال 24 ساعة", en: "Max 24h rainfall" },
   total_cities: { ar: "إجمالي المدن", en: "Total cities" },
   cities_at_risk: { ar: "مدن في خطر", en: "Cities at risk" },
   avg_risk_score: { ar: "متوسط درجة الخطورة", en: "Average risk score" },
@@ -97,7 +149,10 @@ const kpiLabels = {
 const CITY_KEYS = ["city", "city_name", "name", "location"];
 const SCORE_KEYS = ["risk_score", "score"];
 const LEVEL_KEYS = ["risk_level", "level", "risk_category", "category"];
+const RAIN24_KEYS = ["rain_sum_24h"];
+const RAIN72_KEYS = ["rain_sum_72h"];
 const RAIN_KEYS = [
+  "avg_rainfall",
   "rainfall_mm",
   "rainfall",
   "rain_mm",
@@ -107,6 +162,7 @@ const RAIN_KEYS = [
   "precip_mm",
 ];
 const TIME_KEYS = [
+  "event_time",
   "timestamp",
   "time",
   "datetime",
@@ -142,8 +198,10 @@ function getJson(path, force = false) {
     if (hit && Date.now() - hit.time < CACHE_TTL_MS) {
       return Promise.resolve(hit.data);
     }
-    if (inflight.has(path)) return inflight.get(path);
   }
+
+  // يمنع إرسال نفس الطلب مرتين لو React أعاد تشغيله أثناء التطوير.
+  if (inflight.has(path)) return inflight.get(path);
 
   const promise = fetch(`${API_BASE}${path}`, {
     headers: { Accept: "application/json" },
@@ -151,22 +209,30 @@ function getJson(path, force = false) {
     .then(async (response) => {
       let body = null;
       let parsed = true;
+
       try {
         body = await response.json();
       } catch {
         parsed = false;
       }
+
       if (!response.ok) {
         const error = new Error(`HTTP ${response.status}`);
         error.status = response.status;
+        error.detail = typeof body?.detail === "string" ? body.detail : "";
         throw error;
       }
+
       if (!parsed) {
         const error = new Error("Invalid JSON");
         error.status = response.status;
         throw error;
       }
-      cache.set(path, { time: Date.now(), data: body });
+
+      const savedAt = Date.now();
+      cache.set(path, { time: savedAt, data: body });
+      savePersistentCache(path, body, savedAt);
+
       return body;
     })
     .finally(() => {
@@ -178,32 +244,95 @@ function getJson(path, force = false) {
 }
 
 function useResource(path, reloadKey) {
-  const [state, setState] = useState({
-    status: path ? "loading" : "idle",
-    data: null,
-    error: null,
+  const [state, setState] = useState(() => {
+    const saved = readPersistentCache(path);
+
+    if (saved) {
+      return {
+        path,
+        status: "success",
+        data: saved.data,
+        error: null,
+        stale: true,
+      };
+    }
+
+    return {
+      path,
+      status: path ? "loading" : "idle",
+      data: null,
+      error: null,
+      stale: false,
+    };
   });
-  const seenReload = useRef(reloadKey);
 
   useEffect(() => {
     if (!path) {
-      setState({ status: "idle", data: null, error: null });
+      setState({
+        path: null,
+        status: "idle",
+        data: null,
+        error: null,
+        stale: false,
+      });
       return undefined;
     }
 
-    // Bypass the cache only when the refresh button was pressed.
-    const force = seenReload.current !== reloadKey;
-    seenReload.current = reloadKey;
-
     let cancelled = false;
-    setState({ status: "loading", data: null, error: null });
+    const saved = readPersistentCache(path);
 
-    getJson(path, force)
+    // Show saved data immediately, then revalidate it from the API.
+    if (saved) {
+      setState({
+        path,
+        status: "success",
+        data: saved.data,
+        error: null,
+        stale: true,
+      });
+    } else {
+      setState({
+        path,
+        status: "loading",
+        data: null,
+        error: null,
+        stale: false,
+      });
+    }
+
+    getJson(path, true)
       .then((data) => {
-        if (!cancelled) setState({ status: "success", data, error: null });
+        if (!cancelled) {
+          setState({
+            path,
+            status: "success",
+            data,
+            error: null,
+            stale: false,
+          });
+        }
       })
       .catch((error) => {
-        if (!cancelled) setState({ status: "error", data: null, error });
+        if (cancelled) return;
+
+        setState((current) => {
+          if (current.path === path && current.data !== null) {
+            return {
+              ...current,
+              status: "success",
+              error,
+              stale: true,
+            };
+          }
+
+          return {
+            path,
+            status: "error",
+            data: null,
+            error,
+            stale: false,
+          };
+        });
       });
 
     return () => {
@@ -211,9 +340,31 @@ function useResource(path, reloadKey) {
     };
   }, [path, reloadKey]);
 
+  // On city changes, show that city's saved data instead of the previous city's.
+  if (state.path !== path) {
+    const saved = readPersistentCache(path);
+
+    if (saved) {
+      return {
+        path,
+        status: "success",
+        data: saved.data,
+        error: null,
+        stale: true,
+      };
+    }
+
+    return {
+      path,
+      status: path ? "loading" : "idle",
+      data: null,
+      error: null,
+      stale: false,
+    };
+  }
+
   return state;
 }
-
 /* ---------- response normalizers ---------- */
 
 const isPlainObject = (value) =>
@@ -290,7 +441,14 @@ function formatTime(value, lang, options) {
   return new Intl.DateTimeFormat(LOCALES[lang] ?? lang, options).format(date);
 }
 
-const DATE_TIME = { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" };
+// Year included so an old reading (e.g. "Jan 1, 2025") is obviously not live.
+const DATE_TIME = {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+};
 const HOUR_ONLY = { hour: "2-digit", minute: "2-digit", hour12: false };
 
 function formatNumber(value, lang) {
@@ -334,6 +492,8 @@ function normalizeStatus(item) {
     score: toNumber(pick(item, SCORE_KEYS)),
     level: typeof level === "string" ? level : null,
     rain: toNumber(pick(item, RAIN_KEYS)),
+    rain24: toNumber(pick(item, RAIN24_KEYS)),
+    rain72: toNumber(pick(item, RAIN72_KEYS)),
     time: pick(item, TIME_KEYS),
   };
 }
@@ -399,6 +559,7 @@ function normalizeHistory(payload) {
       time: pick(item, TIME_KEYS),
       score: toNumber(pick(item, SCORE_KEYS)),
       rain: toNumber(pick(item, RAIN_KEYS)),
+      rain24: toNumber(pick(item, RAIN24_KEYS)),
     }));
 
   const allDated = points.length > 0 && points.every((p) => parseTime(p.time));
@@ -420,6 +581,16 @@ function RiskPill({ level, text }) {
   );
 }
 
+// analysis_api.py raises HTTPException(404) inside `try ... except Exception`,
+// so the 404 is caught and re-sent as a 500 whose detail starts with
+// "404: No history found...". Treat both shapes as "no record for this region".
+function isNoRecord(error) {
+  return (
+    error?.status === 404 ||
+    (error?.status === 500 && /no history found/i.test(error?.detail ?? ""))
+  );
+}
+
 function StateMessage({ state, text, children, isEmpty, emptyText, notFoundIsEmpty }) {
   if (state.status === "loading" || state.status === "idle") {
     return (
@@ -429,7 +600,7 @@ function StateMessage({ state, text, children, isEmpty, emptyText, notFoundIsEmp
     );
   }
   // For per-region endpoints, a 404 means "no record for this region".
-  if (state.status === "error" && notFoundIsEmpty && state.error?.status === 404) {
+  if (state.status === "error" && notFoundIsEmpty && isNoRecord(state.error)) {
     return <p className="analysis-note">{emptyText ?? text.empty}</p>;
   }
   if (state.status === "error") {
@@ -444,8 +615,29 @@ function StateMessage({ state, text, children, isEmpty, emptyText, notFoundIsEmp
       </div>
     );
   }
-  if (isEmpty) return <p className="analysis-note">{emptyText ?? text.empty}</p>;
-  return children;
+  if (isEmpty) {
+    return (
+      <>
+        {state.stale && (
+          <p className="stale-data-note" role="status">
+            {state.error ? text.staleFailed : text.stale}
+          </p>
+        )}
+        <p className="analysis-note">{emptyText ?? text.empty}</p>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {state.stale && (
+        <p className="stale-data-note" role="status">
+          {state.error ? text.staleFailed : text.stale}
+        </p>
+      )}
+      {children}
+    </>
+  );
 }
 
 function LineChart({ points, metric, lang, text }) {
@@ -571,13 +763,17 @@ export default function AnalysisPanel({ lang, city, regions = [] }) {
     [history]
   );
 
-  const availableMetrics = ["score", "rain"].filter((key) =>
+  const availableMetrics = ["score", "rain", "rain24"].filter((key) =>
     points.some((p) => p[key] !== null)
   );
   const activeMetric = availableMetrics.includes(metric)
     ? metric
     : availableMetrics[0];
-  const metricName = { score: text.score, rain: `${text.rainfall} (${text.mm})` };
+  const metricName = {
+    score: text.score,
+    rain: `${text.rainfall} (${text.mm})`,
+    rain24: `${text.rain24} (${text.mm})`,
+  };
 
   const regionLabel = (id) =>
     regions.find((region) => region.id === id)?.[lang] ?? id ?? "";
@@ -587,6 +783,8 @@ export default function AnalysisPanel({ lang, city, regions = [] }) {
     if (known) return known[lang];
     return typeof row.label === "string" ? humanize(row.label) : String(row.label);
   };
+
+  const kpiUnit = (row) => (/rain/i.test(row.key ?? "") ? text.mm : "");
 
   const kpiValue = (row) => {
     if (typeof row.value === "boolean") return row.value ? text.yes : text.no;
@@ -616,7 +814,9 @@ export default function AnalysisPanel({ lang, city, regions = [] }) {
                 <span className="kpi-label">{kpiLabel(row)}</span>
                 <strong className="kpi-value">
                   {kpiValue(row)}
-                  {row.unit && <small> {row.unit}</small>}
+                  {(row.unit || kpiUnit(row)) && (
+                    <small> {row.unit || kpiUnit(row)}</small>
+                  )}
                 </strong>
               </article>
             ))}
@@ -640,7 +840,11 @@ export default function AnalysisPanel({ lang, city, regions = [] }) {
                   {record && <RiskPill level={record.level} text={text} />}
                 </header>
                 {record &&
-                (record.score !== null || record.rain !== null || record.time) ? (
+                (record.score !== null ||
+                  record.rain !== null ||
+                  record.rain24 !== null ||
+                  record.rain72 !== null ||
+                  record.time) ? (
                   <dl>
                     {record.score !== null && (
                       <div>
@@ -653,6 +857,22 @@ export default function AnalysisPanel({ lang, city, regions = [] }) {
                         <dt>{text.rainfall}</dt>
                         <dd>
                           {formatNumber(record.rain, lang)} {text.mm}
+                        </dd>
+                      </div>
+                    )}
+                    {record.rain24 !== null && (
+                      <div>
+                        <dt>{text.rain24}</dt>
+                        <dd>
+                          {formatNumber(record.rain24, lang)} {text.mm}
+                        </dd>
+                      </div>
+                    )}
+                    {record.rain72 !== null && (
+                      <div>
+                        <dt>{text.rain72}</dt>
+                        <dd>
+                          {formatNumber(record.rain72, lang)} {text.mm}
                         </dd>
                       </div>
                     )}
@@ -696,7 +916,7 @@ export default function AnalysisPanel({ lang, city, regions = [] }) {
           state={history}
           text={text}
           isEmpty={points.length === 0}
-          emptyText={text.noData}
+          emptyText={text.noHistory}
           notFoundIsEmpty
         >
           {activeMetric ? (
