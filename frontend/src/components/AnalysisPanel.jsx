@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 // Empty by default: requests go to /analysis/... on the Vite origin and the dev
 // proxy (vite.config.js) forwards them to http://127.0.0.1:8000, which avoids
@@ -7,50 +7,13 @@ import { useEffect, useMemo, useState } from "react";
 const API_BASE = import.meta.env.VITE_ANALYSIS_API_BASE ?? "";
 
 const CACHE_TTL_MS = 60_000;
-const PERSISTENT_CACHE_PREFIX = "flood-analysis:";
-const PERSISTENT_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-
-function readPersistentCache(path) {
-  if (!path || typeof window === "undefined") return null;
-
-  try {
-    const key = `${PERSISTENT_CACHE_PREFIX}${path}`;
-    const saved = window.localStorage.getItem(key);
-    if (!saved) return null;
-
-    const entry = JSON.parse(saved);
-    const expired =
-      !Number.isFinite(entry?.savedAt) ||
-      Date.now() - entry.savedAt > PERSISTENT_CACHE_MAX_AGE_MS;
-
-    if (expired || !("data" in entry)) {
-      window.localStorage.removeItem(key);
-      return null;
-    }
-
-    return entry;
-  } catch {
-    return null;
-  }
-}
-
-function savePersistentCache(path, data, savedAt) {
-  try {
-    window.localStorage.setItem(
-      `${PERSISTENT_CACHE_PREFIX}${path}`,
-      JSON.stringify({ savedAt, data })
-    );
-  } catch {
-    // لو المتصفح مانع التخزين، الصفحة تفضل تشتغل عادي.
-  }
-}
 const LOCALES = { ar: "ar-u-nu-latn", en: "en" };
 
 const labels = {
   ar: {
     eyebrow: "قسم التحليلات",
     refresh: "تحديث البيانات",
-    statusTitle: "الحالة الحالية للمدن",
+    statusTitle: "تفاصيل المدينة المحددة",
     kpiTitle: "مؤشرات الأداء",
     historyTitle: "آخر 24 ساعة",
     loading: "جاري التحميل...",
@@ -77,13 +40,11 @@ const labels = {
     noMetric: "لا توجد قيم رقمية في بيانات السجل.",
     noData: "لا توجد بيانات حالية متاحة.",
     noHistory: "لا توجد قراءات خلال آخر 24 ساعة لهذه المنطقة.",
-    stale: "البيانات المعروضة محفوظة من زيارة سابقة وقد تكون قديمة. جارٍ تحديثها الآن.",
-    staleFailed: "تعذّر تحديث البيانات؛ المعروض هو آخر بيانات محفوظة وقد تكون قديمة.",
   },
   en: {
     eyebrow: "Analytics",
     refresh: "Refresh data",
-    statusTitle: "Current city status",
+    statusTitle: "Selected city details",
     kpiTitle: "Key indicators",
     historyTitle: "Last 24 hours",
     loading: "Loading...",
@@ -110,8 +71,6 @@ const labels = {
     noMetric: "The history data has no numeric values.",
     noData: "No current data available.",
     noHistory: "No readings in the last 24 hours for this region.",
-    stale: "Showing saved data from a previous visit. It may be outdated; refreshing now.",
-    staleFailed: "Could not refresh the data. Showing the last saved version, which may be outdated.",
   },
 };
 
@@ -198,10 +157,8 @@ function getJson(path, force = false) {
     if (hit && Date.now() - hit.time < CACHE_TTL_MS) {
       return Promise.resolve(hit.data);
     }
+    if (inflight.has(path)) return inflight.get(path);
   }
-
-  // يمنع إرسال نفس الطلب مرتين لو React أعاد تشغيله أثناء التطوير.
-  if (inflight.has(path)) return inflight.get(path);
 
   const promise = fetch(`${API_BASE}${path}`, {
     headers: { Accept: "application/json" },
@@ -209,30 +166,23 @@ function getJson(path, force = false) {
     .then(async (response) => {
       let body = null;
       let parsed = true;
-
       try {
         body = await response.json();
       } catch {
         parsed = false;
       }
-
       if (!response.ok) {
         const error = new Error(`HTTP ${response.status}`);
         error.status = response.status;
         error.detail = typeof body?.detail === "string" ? body.detail : "";
         throw error;
       }
-
       if (!parsed) {
         const error = new Error("Invalid JSON");
         error.status = response.status;
         throw error;
       }
-
-      const savedAt = Date.now();
-      cache.set(path, { time: savedAt, data: body });
-      savePersistentCache(path, body, savedAt);
-
+      cache.set(path, { time: Date.now(), data: body });
       return body;
     })
     .finally(() => {
@@ -244,95 +194,32 @@ function getJson(path, force = false) {
 }
 
 function useResource(path, reloadKey) {
-  const [state, setState] = useState(() => {
-    const saved = readPersistentCache(path);
-
-    if (saved) {
-      return {
-        path,
-        status: "success",
-        data: saved.data,
-        error: null,
-        stale: true,
-      };
-    }
-
-    return {
-      path,
-      status: path ? "loading" : "idle",
-      data: null,
-      error: null,
-      stale: false,
-    };
+  const [state, setState] = useState({
+    status: path ? "loading" : "idle",
+    data: null,
+    error: null,
   });
+  const seenReload = useRef(reloadKey);
 
   useEffect(() => {
     if (!path) {
-      setState({
-        path: null,
-        status: "idle",
-        data: null,
-        error: null,
-        stale: false,
-      });
+      setState({ status: "idle", data: null, error: null });
       return undefined;
     }
 
+    // Bypass the cache only when the refresh button was pressed.
+    const force = seenReload.current !== reloadKey;
+    seenReload.current = reloadKey;
+
     let cancelled = false;
-    const saved = readPersistentCache(path);
+    setState({ status: "loading", data: null, error: null });
 
-    // Show saved data immediately, then revalidate it from the API.
-    if (saved) {
-      setState({
-        path,
-        status: "success",
-        data: saved.data,
-        error: null,
-        stale: true,
-      });
-    } else {
-      setState({
-        path,
-        status: "loading",
-        data: null,
-        error: null,
-        stale: false,
-      });
-    }
-
-    getJson(path, true)
+    getJson(path, force)
       .then((data) => {
-        if (!cancelled) {
-          setState({
-            path,
-            status: "success",
-            data,
-            error: null,
-            stale: false,
-          });
-        }
+        if (!cancelled) setState({ status: "success", data, error: null });
       })
       .catch((error) => {
-        if (cancelled) return;
-
-        setState((current) => {
-          if (current.path === path && current.data !== null) {
-            return {
-              ...current,
-              status: "success",
-              error,
-              stale: true,
-            };
-          }
-
-          return {
-            path,
-            status: "error",
-            data: null,
-            error,
-            stale: false,
-          };
-        });
+        if (!cancelled) setState({ status: "error", data: null, error });
       });
 
     return () => {
@@ -340,31 +227,9 @@ function useResource(path, reloadKey) {
     };
   }, [path, reloadKey]);
 
-  // On city changes, show that city's saved data instead of the previous city's.
-  if (state.path !== path) {
-    const saved = readPersistentCache(path);
-
-    if (saved) {
-      return {
-        path,
-        status: "success",
-        data: saved.data,
-        error: null,
-        stale: true,
-      };
-    }
-
-    return {
-      path,
-      status: path ? "loading" : "idle",
-      data: null,
-      error: null,
-      stale: false,
-    };
-  }
-
   return state;
 }
+
 /* ---------- response normalizers ---------- */
 
 const isPlainObject = (value) =>
@@ -571,16 +436,6 @@ function normalizeHistory(payload) {
 
 /* ---------- small presentational pieces ---------- */
 
-function RiskPill({ level, text }) {
-  if (!level) return null;
-  const key = riskKeyOf(level);
-  return (
-    <span className={`risk-pill risk-${key ?? "unknown"}`}>
-      {key ? text[key] : level}
-    </span>
-  );
-}
-
 // analysis_api.py raises HTTPException(404) inside `try ... except Exception`,
 // so the 404 is caught and re-sent as a 500 whose detail starts with
 // "404: No history found...". Treat both shapes as "no record for this region".
@@ -615,29 +470,8 @@ function StateMessage({ state, text, children, isEmpty, emptyText, notFoundIsEmp
       </div>
     );
   }
-  if (isEmpty) {
-    return (
-      <>
-        {state.stale && (
-          <p className="stale-data-note" role="status">
-            {state.error ? text.staleFailed : text.stale}
-          </p>
-        )}
-        <p className="analysis-note">{emptyText ?? text.empty}</p>
-      </>
-    );
-  }
-
-  return (
-    <>
-      {state.stale && (
-        <p className="stale-data-note" role="status">
-          {state.error ? text.staleFailed : text.stale}
-        </p>
-      )}
-      {children}
-    </>
-  );
+  if (isEmpty) return <p className="analysis-note">{emptyText ?? text.empty}</p>;
+  return children;
 }
 
 function LineChart({ points, metric, lang, text }) {
@@ -745,15 +579,15 @@ export default function AnalysisPanel({ lang, city, regions = [] }) {
     reloadKey
   );
 
-  // One entry per canonical region, in canonical order. `record` is the matching
-  // API row, or null when the API has no current data for that region.
-  const regionCards = useMemo(() => {
-    const rows =
-      status.status === "success"
-        ? toList(status.data).filter(isPlainObject).map(normalizeStatus)
-        : [];
-    return regions.map((region) => ({ region, record: findRecord(region, rows) }));
-  }, [status, regions]);
+  // The API row for the selected region (matched by canonical id / name from the
+  // existing current-status response), or null when it has no current record.
+  const selectedRecord = useMemo(() => {
+    if (status.status !== "success") return null;
+    const region = regions.find((item) => item.id === city);
+    if (!region) return null;
+    const rows = toList(status.data).filter(isPlainObject).map(normalizeStatus);
+    return findRecord(region, rows);
+  }, [status, regions, city]);
   const kpiRows = useMemo(
     () => (kpis.status === "success" ? normalizeKpis(kpis.data) : []),
     [kpis]
@@ -777,6 +611,31 @@ export default function AnalysisPanel({ lang, city, regions = [] }) {
 
   const regionLabel = (id) =>
     regions.find((region) => region.id === id)?.[lang] ?? id ?? "";
+
+  // The five metrics of the selected-city card. A missing value is shown as "—".
+  const cityMetrics = (() => {
+    const record = selectedRecord;
+    const number = (value, suffix) =>
+      value === null || value === undefined
+        ? null
+        : `${formatNumber(value, lang)}${suffix}`;
+    const rows = [
+      { key: "score", label: text.score, value: number(record?.score, " / 100") },
+      { key: "rain", label: text.rainfall, value: number(record?.rain, ` ${text.mm}`) },
+      { key: "rain24", label: text.rain24, value: number(record?.rain24, ` ${text.mm}`) },
+      { key: "rain72", label: text.rain72, value: number(record?.rain72, ` ${text.mm}`) },
+      {
+        key: "updated",
+        label: text.updated,
+        value: record?.time ? formatTime(record.time, lang, DATE_TIME) || null : null,
+      },
+    ];
+    return rows.map((row) => ({
+      ...row,
+      empty: row.value === null,
+      value: row.value ?? "—",
+    }));
+  })();
 
   const kpiLabel = (row) => {
     const known = row.key ? kpiLabels[row.key.toLowerCase()] : null;
@@ -824,71 +683,20 @@ export default function AnalysisPanel({ lang, city, regions = [] }) {
         </StateMessage>
       </div>
 
-      <div className="card">
-        <h2>{text.statusTitle}</h2>
-        <StateMessage state={status} text={text} isEmpty={regionCards.length === 0}>
-          <div className="status-grid">
-            {regionCards.map(({ region, record }) => (
-              <article
-                className={`status-card${region.id === city ? " selected" : ""}${
-                  record ? "" : " no-data"
-                }`}
-                key={region.id}
-              >
-                <header>
-                  <h3>{region[lang]}</h3>
-                  {record && <RiskPill level={record.level} text={text} />}
-                </header>
-                {record &&
-                (record.score !== null ||
-                  record.rain !== null ||
-                  record.rain24 !== null ||
-                  record.rain72 !== null ||
-                  record.time) ? (
-                  <dl>
-                    {record.score !== null && (
-                      <div>
-                        <dt>{text.score}</dt>
-                        <dd>{formatNumber(record.score, lang)} / 100</dd>
-                      </div>
-                    )}
-                    {record.rain !== null && (
-                      <div>
-                        <dt>{text.rainfall}</dt>
-                        <dd>
-                          {formatNumber(record.rain, lang)} {text.mm}
-                        </dd>
-                      </div>
-                    )}
-                    {record.rain24 !== null && (
-                      <div>
-                        <dt>{text.rain24}</dt>
-                        <dd>
-                          {formatNumber(record.rain24, lang)} {text.mm}
-                        </dd>
-                      </div>
-                    )}
-                    {record.rain72 !== null && (
-                      <div>
-                        <dt>{text.rain72}</dt>
-                        <dd>
-                          {formatNumber(record.rain72, lang)} {text.mm}
-                        </dd>
-                      </div>
-                    )}
-                    {record.time && (
-                      <div>
-                        <dt>{text.updated}</dt>
-                        <dd>{formatTime(record.time, lang, DATE_TIME)}</dd>
-                      </div>
-                    )}
-                  </dl>
-                ) : (
-                  <p className="analysis-note">{text.noData}</p>
-                )}
-              </article>
+      <div className="card selected-city-card">
+        <h2>
+          {regionLabel(city)}
+        </h2>
+        <StateMessage state={status} text={text}>
+          <dl className="city-metrics">
+            {cityMetrics.map((metricRow) => (
+              <div className="city-metric" key={metricRow.key}>
+                <dt>{metricRow.label}</dt>
+                <dd className={metricRow.empty ? "is-empty" : ""}>{metricRow.value}</dd>
+              </div>
             ))}
-          </div>
+          </dl>
+          {!selectedRecord && <p className="analysis-note">{text.noData}</p>}
         </StateMessage>
       </div>
 
