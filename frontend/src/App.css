@@ -853,3 +853,243 @@
     flex-direction: column;
   }
 }
+
+/* ---------- analytical charts ---------- */
+
+.app {
+  --chart-1: #147f79;
+  --chart-2: #c05621;
+  --risk-safe: #1f8a5b;
+  --risk-watch: #946200;
+  --risk-danger: #c05621;
+  --risk-severe: #c53030;
+  --risk-unknown: #718096;
+}
+
+.app.theme-dark {
+  --chart-1: #38c7b5;
+  --chart-2: #f6ad55;
+  --risk-safe: #3ec28a;
+  --risk-watch: #e0a526;
+  --risk-danger: #ee8142;
+  --risk-severe: #fc6a6a;
+  --risk-unknown: #a7b6c6;
+}
+
+.charts-heading {
+  margin-top: 8px;
+}
+
+.chart-grid-2 {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.chart-card {
+  min-width: 0;
+}
+
+.chart-note {
+  margin: 0 0 14px;
+  font-size: 13px;
+}
+
+.tone-safe {
+  background: var(--risk-safe);
+  fill: var(--risk-safe);
+}
+
+.tone-watch {
+  background: var(--risk-watch);
+  fill: var(--risk-watch);
+}
+
+.tone-danger {
+  background: var(--risk-danger);
+  fill: var(--risk-danger);
+}
+
+.tone-severe {
+  background: var(--risk-severe);
+  fill: var(--risk-severe);
+}
+
+.tone-unknown {
+  background: var(--risk-unknown);
+  fill: var(--risk-unknown);
+}
+
+.series-fill-1,
+.series-1-key {
+  background: var(--chart-1);
+}
+
+.series-fill-2,
+.series-2-key {
+  background: var(--chart-2);
+}
+
+.series-line {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.series-line.series-1 {
+  stroke: var(--chart-1);
+}
+
+.series-line.series-2 {
+  stroke: var(--chart-2);
+}
+
+.series-dot {
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+
+.series-dot.series-1 {
+  fill: var(--chart-1);
+}
+
+.series-dot.series-2 {
+  fill: var(--chart-2);
+}
+
+.scatter-dot {
+  fill-opacity: 0.75;
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+
+.chart-axis-title {
+  fill: var(--muted);
+  font-size: 12px;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.chart-legend li,
+.distribution-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 4px;
+}
+
+/* horizontal bars (follow the page direction, so RTL grows from the right) */
+.hbar {
+  display: grid;
+  gap: 12px;
+  max-height: 460px;
+  overflow-y: auto;
+  padding-inline-end: 4px;
+}
+
+.hbar-row {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: minmax(84px, 120px) minmax(0, 1fr);
+  align-items: center;
+}
+
+.hbar-label {
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.hbar-tracks {
+  display: grid;
+  gap: 4px;
+}
+
+.hbar-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hbar-bar {
+  flex: 1;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.hbar-fill {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 999px;
+}
+
+.hbar-value {
+  min-width: 64px;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+/* risk distribution */
+.stacked {
+  display: grid;
+  gap: 14px;
+}
+
+.stacked-bar {
+  display: flex;
+  height: 22px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.stacked-segment {
+  display: block;
+  height: 100%;
+}
+
+.distribution-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.distribution-list strong {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 900px) {
+  .chart-grid-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 650px) {
+  .hbar-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
